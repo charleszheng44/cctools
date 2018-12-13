@@ -23,4 +23,3 @@ clean:
 
 install: 
 	@echo Warning: go work_queue module needs to be installed manually.
-
