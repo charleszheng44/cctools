@@ -40,7 +40,7 @@ typedef enum {
 	BATCH_QUEUE_TYPE_CONDOR,              /**< Batch jobs will be sent to Condor pool. */
 	BATCH_QUEUE_TYPE_AMAZON,              /**< Batch jobs will be sent spun up Amazon ec2 instances */
 	BATCH_QUEUE_TYPE_LAMBDA,              /**< Batch jobs will be executed by an Amazon Lambda function with S3 objects */
-        BATCH_QUEUE_TYPE_AMAZON_BATCH,        /**< Batch jobs will be sent to Amazon Batch System */
+	BATCH_QUEUE_TYPE_AMAZON_BATCH,        /**< Batch jobs will be sent to Amazon Batch System */
 	BATCH_QUEUE_TYPE_SGE,	              /**< Batch jobs will be sent to Sun Grid Engine. */
 	BATCH_QUEUE_TYPE_MOAB,                /**< Batch jobs will be sent to the Moab Workload Manager. */
 	BATCH_QUEUE_TYPE_PBS,                 /**< Batch jobs will be send to the PBS Scheduler. */
@@ -53,7 +53,8 @@ typedef enum {
 	BATCH_QUEUE_TYPE_MESOS,               /**< Batch jobs will be sent to Mesos. */
 	BATCH_QUEUE_TYPE_K8S,                 /**< Batch jobs will be sent to kubernetes. */
 	BATCH_QUEUE_TYPE_DRYRUN,              /**< Batch jobs will not actually run. */
-        BATCH_QUEUE_TYPE_MPI,
+	BATCH_QUEUE_TYPE_MPI,
+	BATCH_QUEUE_TYPE_WORK_QUEUE_BOSS,	  /**< Batch jobs will be sent to Work Qeueu Boss. */
 	BATCH_QUEUE_TYPE_UNKNOWN = -1         /**< An invalid batch queue type. */
 } batch_queue_type_t;
 
