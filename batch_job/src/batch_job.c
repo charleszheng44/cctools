@@ -35,6 +35,7 @@ extern const struct batch_queue_module batch_queue_wq;
 extern const struct batch_queue_module batch_queue_mesos;
 extern const struct batch_queue_module batch_queue_k8s;
 extern const struct batch_queue_module batch_queue_dryrun;
+extern const struct batch_queue_module batch_queue_work_queue_boss;
 #ifdef CCTOOLS_WITH_MPI
 extern const struct batch_queue_module batch_queue_mpi;
 #endif
@@ -50,9 +51,9 @@ static struct batch_queue_module batch_queue_unknown = {
 };
 
 #ifdef CCTOOLS_WITH_MPI
-#define BATCH_JOB_SYSTEMS "local, wq, condor, sge, torque, mesos, k8s, moab, slurm, chirp, amazon, lambda, dryrun, amazon-batch, mpi"
+#define BATCH_JOB_SYSTEMS "local, wq, condor, sge, torque, mesos, k8s, moab, slurm, chirp, amazon, lambda, dryrun, amazon-batch, mpi, wqboss"
 #else
-#define BATCH_JOB_SYSTEMS "local, wq, condor, sge, torque, mesos, k8s, moab, slurm, chirp, amazon, lambda, dryrun, amazon-batch"
+#define BATCH_JOB_SYSTEMS "local, wq, condor, sge, torque, mesos, k8s, moab, slurm, chirp, amazon, lambda, dryrun, amazon-batch, wqboss"
 #endif
 
 const struct batch_queue_module * const batch_queue_modules[] = {
