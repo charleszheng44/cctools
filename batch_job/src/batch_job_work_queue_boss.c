@@ -25,9 +25,9 @@ See the file COPYING for details.
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-static const char *task_state_ready = "READY";
-static const char *task_state_done = "DONE";
-static const char *task_state_fail = "FAIL";
+static const char *task_state_ready = "ready";
+static const char *task_state_done = "done";
+// static const char *task_state_fail = "fail";
 
 // wqboss_task has the same fields as golang struct  
 // Task defined in workqueue-boss/pkg/task/task.go
@@ -85,10 +85,9 @@ struct wqboss_task *new_wqboss_task_from_json(char *json_string) {
     struct jx *output_jx = jx_lookup(j1, "outputs");
     struct hash_table *input_ht = jx_to_strval_hash_table(input_jx);
     struct hash_table *output_ht = jx_to_strval_hash_table(output_jx);
-
     struct wqboss_task *t = new_wqboss_task((int)jx_lookup_integer(j1, "id"),
-            input_ht, output_ht, (char *)jx_lookup_string(j1, "exec_cmd"),
-            (char *)jx_lookup_string(j1, "task_state"));
+            input_ht, output_ht, (char *)jx_lookup_string(j1, "execcmd"),
+            (char *)jx_lookup_string(j1, "state"));
 	
     return t;
 }
@@ -97,15 +96,15 @@ struct wqboss_task *new_wqboss_task_from_json(char *json_string) {
 // a jx object and insert it to given jx 
 static void jx_insert_strval_hash_table(struct jx *j, 
 		char *key, struct hash_table *str_ht) {
-    struct jx *new_j = xxcalloc(1, sizeof(*j));
-    j->type = JX_OBJECT;
+    struct jx *new_j = xxcalloc(1, sizeof(*new_j));
+    new_j->type = JX_OBJECT;
     
     char *new_key;
     void *value; 
     
     hash_table_firstkey(str_ht);
     while(hash_table_nextkey(str_ht, &new_key, &value) != 0) {
-        jx_insert_string(new_j, new_key, (char *)value);
+        jx_insert_string(new_j, new_key, value);
     }
     jx_insert(j, jx_string(key), new_j);
 }
@@ -120,7 +119,7 @@ char *wqboss_task_to_json_string(struct wqboss_task *t) {
     jx_insert_integer(j, "id", (jx_int_t)t->ID);
     jx_insert_strval_hash_table(j, "inputs", t->inputs);
     jx_insert_strval_hash_table(j, "outputs", t->outputs);
-    jx_insert_string(j, "exec_cmd", t->exec_cmd);
+    jx_insert_string(j, "execcmd", t->exec_cmd);
     jx_insert_string(j, "state", t->task_state);
 
     char *ret =  jx_print_string(j);
@@ -129,18 +128,18 @@ char *wqboss_task_to_json_string(struct wqboss_task *t) {
 }
 
 static int is_boss_running = 0;
-static int port_num = 0;
+// static int port_num = 0;
 static int is_connected = 0;
 static int sock_fd = 0;
 static int id_counter = 0;
 
 // BUF_SIZE is the size of the message transferred between 
 // client and server
-#define BUF_SIZE 512
+#define BUF_SIZE 256
 #define BOSS_PORT 9876 
-#define SOCK_READ_TIMEOUT 3
+#define SOCK_READ_TIMEOUT 4
 
-// TODO not implement yet
+// TODO NOT IMPLEMENT
 static void start_boss() {
 }
 
@@ -184,10 +183,10 @@ static struct hash_table *str_to_hash_table(const char *inp_str) {
 	const char *delim = ",";
 	char *ptr = strtok((char *)inp_str, delim);
 	while (ptr) {
-		ptr = strtok(NULL, delim);
 		char *key = malloc(sizeof(ptr));
 		strcpy(key, (const char *)ptr);
 		hash_table_insert(ht, (const char *)key, "");
+		ptr = strtok(NULL, delim);
 	}
 	return ht;
 }
@@ -222,9 +221,10 @@ static batch_job_id_t batch_job_wqboss_submit (struct batch_queue * q,
 		is_connected = 1;
 	}
 	// 3. inform wqboss to execute a new task 
-	char *json_str = batch_job_to_json_string(id_counter++,
+	char *json_str = batch_job_to_json_string(++id_counter,
 			extra_input_files, extra_output_files, cmd);
-	if (send(sock_fd, json_str, strlen(json_str), 0) == -1) {
+	char *sock_msg = string_format("%s\n", json_str);
+	if (send(sock_fd, sock_msg, strlen(sock_msg), 0) == -1) {
 		debug(D_ERROR, "fail to send json string through socket: %s", 
 				strerror(errno));
 		return -1;
@@ -236,24 +236,30 @@ static batch_job_id_t batch_job_wqboss_wait (struct batch_queue * q,
 		struct batch_job_info * info, time_t stoptime) {
 	// wait timeout for receiving a complete task
 	char *buf = malloc(BUF_SIZE);
-	if (read(sock_fd, buf, BUF_SIZE) < 0) {
-		debug(D_ERROR, "fail to read from socket: %s", 
-			 strerror(errno));
+	if (read(sock_fd, buf, BUF_SIZE) <= 0) {
+		debug(D_ERROR, "read nothing from socket: %s", strerror(errno));
+		free(buf);
+		return 0;
 	}
+	debug(D_ERROR, "++++++++ read %s", buf);
 	struct wqboss_task *wt = new_wqboss_task_from_json(buf);
 	free(buf);
-	if (strcmp(wt->task_state, task_state_done) != 0) {
+	if (strcmp(wt->task_state, task_state_done) == 0) {
 		debug(D_INFO, "task %d done", wt->ID);
+		info->exited_normally = 1;
+		info->exit_code = 0;
 		return (batch_job_id_t)wt->ID;
 	} 
+	info->exited_normally = 0;
+	info->exit_code = 1;
 	debug(D_ERROR, "task %d fail", wt->ID);
 	return 0;	
 }
 
 static int batch_job_wqboss_remove (struct batch_queue *q, 
 		batch_job_id_t id) {
+	// TODO NOT IMPLEMENT
 	// inform wqboss to stop running task
-	// TODO
 	return 0;
 }
 
@@ -264,6 +270,7 @@ static int batch_queue_wqboss_create (struct batch_queue *q) {
 }
 
 static int batch_queue_wqboss_free (struct batch_queue *q) {
+	// TODO NOT IMPLEMENT
 	// close socket
 	// stop Work Queue Boss
 	return 0;
@@ -280,7 +287,7 @@ batch_fs_stub_rename(wqboss);
 batch_fs_stub_stat(wqboss);
 batch_fs_stub_unlink(wqboss);
 
-const struct batch_queue_module batch_queue_wqboss = {
+const struct batch_queue_module batch_queue_work_queue_boss = {
 	BATCH_QUEUE_TYPE_WORK_QUEUE_BOSS,
 	"wqboss",
 

@@ -79,6 +79,7 @@ const struct batch_queue_module * const batch_queue_modules[] = {
 	&batch_queue_mesos,
 	&batch_queue_k8s,
 	&batch_queue_dryrun,
+	&batch_queue_work_queue_boss,
 	&batch_queue_unknown
 };
 
