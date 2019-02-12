@@ -30,8 +30,8 @@ SOURCES = \
 	batch_job_work_queue.c \
 	batch_job_mesos.c \
 	batch_job_k8s.c \
+	batch_job_k8s_oper.c \
 	batch_job_mpi.c \
-	batch_job_work_queue_boss.c \
 	mesos_task.c 
 
 PUBLIC_HEADERS = batch_job.h
