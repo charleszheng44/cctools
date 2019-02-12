@@ -6,17 +6,15 @@ See the file COPYING for details.
 
 #include "batch_job.h"
 #include "batch_job_internal.h"
-#include "work_queue.h"
-#include "work_queue_internal.h" /* EVIL */
 #include "debug.h"
 #include "path.h"
 #include "stringtools.h"
-#include "macros.h"
 #include "rmsummary.h"
 #include "jx.h"
 #include "jx_parse.h"
 #include "jx_print.h"
 #include "xxmalloc.h"
+#include "link.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -27,27 +25,25 @@ See the file COPYING for details.
 
 static const char *task_state_ready = "ready";
 static const char *task_state_done = "done";
-// static const char *task_state_fail = "fail";
 
-// wqboss_task has the same fields as golang struct  
-// Task defined in workqueue-boss/pkg/task/task.go
-// Makeflow, Boss and Master transfer task infos to
-// others by this struct
-typedef struct wqboss_task {
+// k8s_oper_task has the same fields as golang struct  
+// Task defined in makeflow-k8s-operator/pkg/task/task.go
+// Makeflow, Makeflow-k8s Operator and Master transfer 
+// task infos to others by this struct
+typedef struct k8s_oper_task {
 	int ID;
 	struct hash_table *inputs;
 	struct hash_table *outputs;
 	char *exec_cmd;
 	char *task_state;
-} wqboss_task; 
+} k8s_oper_task; 
 
-// new_wqboss_task generates a new wqboss_task 
-// object
-struct wqboss_task *new_wqboss_task(int ID, 
+// new_k8s_oper_task generates a new k8s_oper_task object
+struct k8s_oper_task *new_k8s_oper_task(int ID, 
 		struct hash_table *inputs, 
 		struct hash_table *outputs, 
 		char *exec_cmd, char *task_state) {
-	struct wqboss_task *wt = malloc(sizeof(wqboss_task));
+	struct k8s_oper_task *wt = malloc(sizeof(k8s_oper_task));
 	wt->ID = ID;
 	wt->inputs = inputs;
 	wt->outputs = outputs;
@@ -56,7 +52,7 @@ struct wqboss_task *new_wqboss_task(int ID,
 	return wt;
 }
 
-void delete_wqboss_task(struct wqboss_task *wt) {
+void delete_k8s_oper_task(struct k8s_oper_task *wt) {
 	// TODO
 }
 
@@ -76,16 +72,16 @@ static struct hash_table *jx_to_strval_hash_table(struct jx *jx_obj) {
     return ht;
 }
 
-// new_wqboss_task_from_json deserializes a json string to
-// wqboss_task object
+// new_k8s_oper_task_from_json deserializes a json string to
+// k8s_oper_task object
 // const char *-> struct jx *-> struct task*
-struct wqboss_task *new_wqboss_task_from_json(char *json_string) {
+struct k8s_oper_task *new_k8s_oper_task_from_json(char *json_string) {
     struct jx *j1 = jx_parse_string((const char*)json_string);
     struct jx *input_jx = jx_lookup(j1, "inputs");
     struct jx *output_jx = jx_lookup(j1, "outputs");
     struct hash_table *input_ht = jx_to_strval_hash_table(input_jx);
     struct hash_table *output_ht = jx_to_strval_hash_table(output_jx);
-    struct wqboss_task *t = new_wqboss_task((int)jx_lookup_integer(j1, "id"),
+    struct k8s_oper_task *t = new_k8s_oper_task((int)jx_lookup_integer(j1, "id"),
             input_ht, output_ht, (char *)jx_lookup_string(j1, "execcmd"),
             (char *)jx_lookup_string(j1, "state"));
 	
@@ -109,10 +105,10 @@ static void jx_insert_strval_hash_table(struct jx *j,
     jx_insert(j, jx_string(key), new_j);
 }
 
-// wqboss_task_to_json_string serializes a wqboss_task object
+// k8s_oper_task_to_json_string serializes a k8s_oper_task object
 // to json string
 // struct task *-> struct jx *-> const char *
-char *wqboss_task_to_json_string(struct wqboss_task *t) {
+char *k8s_oper_task_to_json_string(struct k8s_oper_task *t) {
     struct jx *j = xxcalloc(1, sizeof(*j));
     j->type = JX_OBJECT;
 
@@ -127,55 +123,33 @@ char *wqboss_task_to_json_string(struct wqboss_task *t) {
     return ret;
 }
 
-static int is_boss_running = 0;
-// static int port_num = 0;
+static int is_k8s_oper_running = 0;
 static int is_connected = 0;
-static int sock_fd = 0;
 static int id_counter = 0;
+struct link *k8s_oper_link = NULL;
 
 // BUF_SIZE is the size of the message transferred between 
 // client and server
-#define BUF_SIZE 256
-#define BOSS_PORT 9876 
+#define BUF_SIZE 2048
+#define K8S_OPER_PORT 9876 
+#define K8S_OPER_CONN_TIMEOUT 5
 #define SOCK_READ_TIMEOUT 4
 
 // TODO NOT IMPLEMENT
-static void start_boss() {
+static void start_k8s_oper() {
 }
 
-// setup_connection builds connection between makeflow and
-// Work Queue Boss
-static int setup_connection() {
-	struct sockaddr_in srv_addr;
-	sock_fd = socket(AF_INET, SOCK_STREAM, 0);
-	if (sock_fd <= 0) {
-		debug(D_INFO, "fail to assign socket for makeflow\n");
-		return -1;
+// setup_k8s_oper_link builds connection between makeflow and
+// makeflow-k8s operator.
+// NOTE: makeflow act as a client, and keepalive will be set 
+// on makeflow-k8s operator side
+static int setup_k8s_oper_link() {
+	time_t stop_time = time(0) + K8S_OPER_CONN_TIMEOUT;
+	if((k8s_oper_link = link_connect("127.0.0.1", K8S_OPER_PORT, stop_time)) == 0) {
+		debug(D_BATCH, "fail to connect to makeflow-k8s operator");
+		return 0;
 	}
-	// set read time out
-	struct timeval tv;	
-	tv.tv_sec = SOCK_READ_TIMEOUT;
-	tv.tv_usec = 0;
-	setsockopt(sock_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
-
-	bzero((char *) &srv_addr, sizeof(srv_addr));	
-	srv_addr.sin_family = AF_INET;
-	srv_addr.sin_port = htons(BOSS_PORT);
-
-	// Convert IPv4 and IPv6 addresses from text to binary form
-	if(inet_pton(AF_INET, "127.0.0.1", &srv_addr.sin_addr)<=0){
-		debug(D_ERROR, "fail to convert 127.0.0.1 to binary form\n");
-		return -1;
-	}
-	// setup connection
-	// makeflow will be the client, heartbeat will be generated on
-	// boss side
-	if (connect(sock_fd, (struct sockaddr *)&srv_addr, sizeof(srv_addr)) < 0) { 
-		debug(D_ERROR, "fail to connect to Boss"); 
-		return -1;
-	}
-
-	return 0;
+	return 1;
 }
 
 static struct hash_table *str_to_hash_table(const char *inp_str) {
@@ -193,123 +167,126 @@ static struct hash_table *str_to_hash_table(const char *inp_str) {
 
 static char *batch_job_to_json_string(int id, const char *inputs, 
 		const char *outputs, const char *cmd) {
-	// batch_job -> wqboss_task
+	// batch_job -> k8s_oper_task
 	struct hash_table *inps = str_to_hash_table(inputs);
 	struct hash_table *oups = str_to_hash_table(outputs);
-	struct wqboss_task *wt = 
-		new_wqboss_task(id, inps, oups, (char *)cmd, (char *)task_state_ready);
-	// wqboss_task -> json_string 
-	char *json_str = wqboss_task_to_json_string(wt);
-	delete_wqboss_task(wt);
+	struct k8s_oper_task *wt = 
+		new_k8s_oper_task(id, inps, oups, (char *)cmd, (char *)task_state_ready);
+	// k8s_oper_task -> json_string 
+	char *json_str = k8s_oper_task_to_json_string(wt);
+	delete_k8s_oper_task(wt);
 	return json_str;
 }
 
-static batch_job_id_t batch_job_wqboss_submit (struct batch_queue * q, 
+static batch_job_id_t batch_job_k8s_oper_submit (struct batch_queue * q, 
 		const char *cmd, const char *extra_input_files, 
 		const char *extra_output_files, struct jx *envlist, 
 		const struct rmsummary *resources) {
-	// 1. start Boss if it is not running
-	if (!is_boss_running) {
-		start_boss();
-		is_boss_running = 1;	
+	// 1. start makeflow-k8s operator if it is not running
+	if (!is_k8s_oper_running) {
+		start_k8s_oper();
+		is_k8s_oper_running = 1;	
 	}
 	// 2. build socket connection if it has not been setup yet
 	if (!is_connected) {
-		if (setup_connection() == -1){
+		if (!setup_k8s_oper_link()){
 			return -1;			
 		};
 		is_connected = 1;
 	}
-	// 3. inform wqboss to execute a new task 
+	// 3. inform makeflow-k8s operator to execute a new task 
 	char *json_str = batch_job_to_json_string(++id_counter,
 			extra_input_files, extra_output_files, cmd);
 	char *sock_msg = string_format("%s\n", json_str);
-	if (send(sock_fd, sock_msg, strlen(sock_msg), 0) == -1) {
-		debug(D_ERROR, "fail to send json string through socket: %s", 
+	time_t stop_time = time(0) + K8S_OPER_CONN_TIMEOUT;
+	if (link_write(k8s_oper_link, sock_msg, strlen(sock_msg), stop_time) < 0) {
+		debug(D_BATCH, "fail to send json string through socket: %s", 
 				strerror(errno));
 		return -1;
 	}
 	return id_counter;
 }
 
-static batch_job_id_t batch_job_wqboss_wait (struct batch_queue * q, 
+static batch_job_id_t batch_job_k8s_oper_wait (struct batch_queue * q, 
 		struct batch_job_info * info, time_t stoptime) {
 	// wait timeout for receiving a complete task
 	char *buf = malloc(BUF_SIZE);
-	if (read(sock_fd, buf, BUF_SIZE) <= 0) {
-		debug(D_ERROR, "read nothing from socket: %s", strerror(errno));
+	time_t stop_time = time(0) + K8S_OPER_CONN_TIMEOUT;
+	if (!link_readline(k8s_oper_link, buf, BUF_SIZE, stop_time)) {
+		debug(D_BATCH, "read nothing from socket: %s", strerror(errno));
 		free(buf);
 		return 0;
 	}
-	debug(D_ERROR, "++++++++ read %s", buf);
-	struct wqboss_task *wt = new_wqboss_task_from_json(buf);
+	
+	debug(D_BATCH, "receive message from Boss: %s", buf);
+	struct k8s_oper_task *wt = new_k8s_oper_task_from_json(buf);
 	free(buf);
 	if (strcmp(wt->task_state, task_state_done) == 0) {
-		debug(D_INFO, "task %d done", wt->ID);
+		debug(D_BATCH, "task %d done", wt->ID);
 		info->exited_normally = 1;
 		info->exit_code = 0;
 		return (batch_job_id_t)wt->ID;
 	} 
 	info->exited_normally = 0;
 	info->exit_code = 1;
-	debug(D_ERROR, "task %d fail", wt->ID);
+	debug(D_BATCH, "task %d fail", wt->ID);
 	return 0;	
 }
 
-static int batch_job_wqboss_remove (struct batch_queue *q, 
+static int batch_job_k8s_oper_remove (struct batch_queue *q, 
 		batch_job_id_t id) {
 	// TODO NOT IMPLEMENT
-	// inform wqboss to stop running task
+	// inform makeflow-k8s operator to stop running task
 	return 0;
 }
 
-static int batch_queue_wqboss_create (struct batch_queue *q) {
-	strncpy(q->logfile, "wqboss.log", sizeof(q->logfile));
-	batch_queue_set_feature(q, "batch_log_name", "%s.wqbosslog");
+static int batch_queue_k8s_oper_create (struct batch_queue *q) {
+	strncpy(q->logfile, "k8s_oper.log", sizeof(q->logfile));
+	batch_queue_set_feature(q, "batch_log_name", "%s.k8soperlog");
 	return 0;
 }
 
-static int batch_queue_wqboss_free (struct batch_queue *q) {
+static int batch_queue_k8s_oper_free (struct batch_queue *q) {
 	// TODO NOT IMPLEMENT
 	// close socket
-	// stop Work Queue Boss
+	// stop makeflow-k8s operator 
 	return 0;
 }
 
-batch_queue_stub_port(wqboss);
-batch_queue_stub_option_update(wqboss);
+batch_queue_stub_port(k8s_oper);
+batch_queue_stub_option_update(k8s_oper);
 
-batch_fs_stub_chdir(wqboss);
-batch_fs_stub_getcwd(wqboss);
-batch_fs_stub_mkdir(wqboss);
-batch_fs_stub_putfile(wqboss);
-batch_fs_stub_rename(wqboss);
-batch_fs_stub_stat(wqboss);
-batch_fs_stub_unlink(wqboss);
+batch_fs_stub_chdir(k8s_oper);
+batch_fs_stub_getcwd(k8s_oper);
+batch_fs_stub_mkdir(k8s_oper);
+batch_fs_stub_putfile(k8s_oper);
+batch_fs_stub_rename(k8s_oper);
+batch_fs_stub_stat(k8s_oper);
+batch_fs_stub_unlink(k8s_oper);
 
-const struct batch_queue_module batch_queue_work_queue_boss = {
-	BATCH_QUEUE_TYPE_WORK_QUEUE_BOSS,
-	"wqboss",
+const struct batch_queue_module batch_queue_k8s_oper = {
+	BATCH_QUEUE_TYPE_K8S_OPER,
+	"k8s-oper",
 
-	batch_queue_wqboss_create,
-	batch_queue_wqboss_free,
-	batch_queue_wqboss_port,
-	batch_queue_wqboss_option_update,
+	batch_queue_k8s_oper_create,
+	batch_queue_k8s_oper_free,
+	batch_queue_k8s_oper_port,
+	batch_queue_k8s_oper_option_update,
 
 	{
-		batch_job_wqboss_submit,
-		batch_job_wqboss_wait,
-		batch_job_wqboss_remove,
+		batch_job_k8s_oper_submit,
+		batch_job_k8s_oper_wait,
+		batch_job_k8s_oper_remove,
 	},
 
 	{
-		batch_fs_wqboss_chdir,
-		batch_fs_wqboss_getcwd,
-		batch_fs_wqboss_mkdir,
-		batch_fs_wqboss_putfile,
-		batch_fs_wqboss_rename,
-		batch_fs_wqboss_stat,
-		batch_fs_wqboss_unlink,
+		batch_fs_k8s_oper_chdir,
+		batch_fs_k8s_oper_getcwd,
+		batch_fs_k8s_oper_mkdir,
+		batch_fs_k8s_oper_putfile,
+		batch_fs_k8s_oper_rename,
+		batch_fs_k8s_oper_stat,
+		batch_fs_k8s_oper_unlink,
 	},
 };
 
