@@ -24,7 +24,7 @@ See the file COPYING for details.
 #include <arpa/inet.h>
 
 static const char *task_state_ready = "ready";
-static const char *task_state_done = "done";
+static const char *task_state_complete = "complete";
 
 // k8s_oper_task has the same fields as golang struct  
 // Task defined in makeflow-k8s-operator/pkg/task/task.go
@@ -37,6 +37,14 @@ typedef struct k8s_oper_task {
 	char *exec_cmd;
 	char *task_state;
 } k8s_oper_task; 
+
+// safe_free checks if a pointer is empty, before
+// free the memory it points to
+static void safe_free(void *ptr) {
+	if (ptr) {
+		free(ptr);
+	}
+}
 
 // new_k8s_oper_task generates a new k8s_oper_task object
 struct k8s_oper_task *new_k8s_oper_task(int ID, 
@@ -88,7 +96,7 @@ struct k8s_oper_task *new_k8s_oper_task_from_json(char *json_string) {
     return t;
 }
 
-// jx_insert_strval_hash_table convert a hash_table <char*, char*> to
+// jx_insert_strval_hash_table convert a hash_table <char*, int*> to
 // a jx object and insert it to given jx 
 static void jx_insert_strval_hash_table(struct jx *j, 
 		char *key, struct hash_table *str_ht) {
@@ -100,7 +108,7 @@ static void jx_insert_strval_hash_table(struct jx *j,
     
     hash_table_firstkey(str_ht);
     while(hash_table_nextkey(str_ht, &new_key, &value) != 0) {
-        jx_insert_string(new_j, new_key, value);
+		jx_insert(new_j, jx_string(new_key), (struct jx *)(value));
     }
     jx_insert(j, jx_string(key), new_j);
 }
@@ -157,9 +165,10 @@ static struct hash_table *str_to_hash_table(const char *inp_str) {
 	const char *delim = ",";
 	char *ptr = strtok((char *)inp_str, delim);
 	while (ptr) {
-		char *key = malloc(sizeof(ptr));
-		strcpy(key, (const char *)ptr);
-		hash_table_insert(ht, (const char *)key, "");
+		// char *key = malloc(sizeof(ptr));
+		// strcpy(key, (const char *)ptr);
+		struct jx *bool_false = jx_boolean(0);
+		hash_table_insert(ht, (const char *)ptr, bool_false);
 		ptr = strtok(NULL, delim);
 	}
 	return ht;
@@ -200,10 +209,12 @@ static batch_job_id_t batch_job_k8s_oper_submit (struct batch_queue * q,
 	char *sock_msg = string_format("%s\n", json_str);
 	time_t stop_time = time(0) + K8S_OPER_CONN_TIMEOUT;
 	if (link_write(k8s_oper_link, sock_msg, strlen(sock_msg), stop_time) < 0) {
+		safe_free(sock_msg);
 		debug(D_BATCH, "fail to send json string through socket: %s", 
 				strerror(errno));
 		return -1;
 	}
+	safe_free(sock_msg);
 	return id_counter;
 }
 
@@ -213,16 +224,16 @@ static batch_job_id_t batch_job_k8s_oper_wait (struct batch_queue * q,
 	char *buf = malloc(BUF_SIZE);
 	time_t stop_time = time(0) + K8S_OPER_CONN_TIMEOUT;
 	if (!link_readline(k8s_oper_link, buf, BUF_SIZE, stop_time)) {
-		debug(D_BATCH, "read nothing from socket: %s", strerror(errno));
-		free(buf);
+		// debug(D_BATCH, "read nothing from socket: %s", strerror(errno));
+		safe_free(buf);
 		return 0;
 	}
 	
 	debug(D_BATCH, "receive message from Boss: %s", buf);
 	struct k8s_oper_task *wt = new_k8s_oper_task_from_json(buf);
-	free(buf);
-	if (strcmp(wt->task_state, task_state_done) == 0) {
-		debug(D_BATCH, "task %d done", wt->ID);
+	safe_free(buf);
+	if (strcmp(wt->task_state, task_state_complete) == 0) {
+		debug(D_BATCH, "task %d complete", wt->ID);
 		info->exited_normally = 1;
 		info->exit_code = 0;
 		return (batch_job_id_t)wt->ID;
