@@ -23,9 +23,6 @@ See the file COPYING for details.
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-static const char *task_state_ready = "ready";
-static const char *task_state_complete = "complete";
-
 // k8s_oper_task has the same fields as golang struct  
 // Task defined in makeflow-k8s-operator/pkg/task/task.go
 // Makeflow, Makeflow-k8s Operator and Master transfer 
@@ -35,7 +32,7 @@ typedef struct k8s_oper_task {
 	struct hash_table *inputs;
 	struct hash_table *outputs;
 	char *exec_cmd;
-	char *task_state;
+	int ret_code
 } k8s_oper_task; 
 
 // safe_free checks if a pointer is empty, before
@@ -50,13 +47,13 @@ static void safe_free(void *ptr) {
 struct k8s_oper_task *new_k8s_oper_task(int ID, 
 		struct hash_table *inputs, 
 		struct hash_table *outputs, 
-		char *exec_cmd, char *task_state) {
+		char *exec_cmd, int ret_code) {
 	struct k8s_oper_task *wt = malloc(sizeof(k8s_oper_task));
 	wt->ID = ID;
 	wt->inputs = inputs;
 	wt->outputs = outputs;
 	wt->exec_cmd = exec_cmd;
-	wt->task_state = task_state;
+	wt->ret_code = ret_code;
 	return wt;
 }
 
@@ -91,7 +88,7 @@ struct k8s_oper_task *new_k8s_oper_task_from_json(char *json_string) {
     struct hash_table *output_ht = jx_to_strval_hash_table(output_jx);
     struct k8s_oper_task *t = new_k8s_oper_task((int)jx_lookup_integer(j1, "id"),
             input_ht, output_ht, (char *)jx_lookup_string(j1, "execcmd"),
-            (char *)jx_lookup_string(j1, "state"));
+            (int)jx_lookup_integer(j1, "retcode"));
 	
     return t;
 }
@@ -124,7 +121,6 @@ char *k8s_oper_task_to_json_string(struct k8s_oper_task *t) {
     jx_insert_strval_hash_table(j, "inputs", t->inputs);
     jx_insert_strval_hash_table(j, "outputs", t->outputs);
     jx_insert_string(j, "execcmd", t->exec_cmd);
-    jx_insert_string(j, "state", t->task_state);
 
     char *ret =  jx_print_string(j);
     jx_delete(j);
@@ -180,7 +176,7 @@ static char *batch_job_to_json_string(int id, const char *inputs,
 	struct hash_table *inps = str_to_hash_table(inputs);
 	struct hash_table *oups = str_to_hash_table(outputs);
 	struct k8s_oper_task *wt = 
-		new_k8s_oper_task(id, inps, oups, (char *)cmd, (char *)task_state_ready);
+		new_k8s_oper_task(id, inps, oups, (char *)cmd, 0);
 	// k8s_oper_task -> json_string 
 	char *json_str = k8s_oper_task_to_json_string(wt);
 	delete_k8s_oper_task(wt);
@@ -232,7 +228,7 @@ static batch_job_id_t batch_job_k8s_oper_wait (struct batch_queue * q,
 	debug(D_BATCH, "receive message from Boss: %s", buf);
 	struct k8s_oper_task *wt = new_k8s_oper_task_from_json(buf);
 	safe_free(buf);
-	if (strcmp(wt->task_state, task_state_complete) == 0) {
+	if (!wt->ret_code) {
 		debug(D_BATCH, "task %d complete", wt->ID);
 		info->exited_normally = 1;
 		info->exit_code = 0;
