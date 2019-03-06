@@ -228,16 +228,10 @@ static batch_job_id_t batch_job_k8s_oper_wait (struct batch_queue * q,
 	debug(D_BATCH, "receive message from Boss: %s", buf);
 	struct k8s_oper_task *wt = new_k8s_oper_task_from_json(buf);
 	safe_free(buf);
-	if (!wt->ret_code) {
-		debug(D_BATCH, "task %d complete", wt->ID);
-		info->exited_normally = 1;
-		info->exit_code = 0;
-		return (batch_job_id_t)wt->ID;
-	} 
-	info->exited_normally = 0;
-	info->exit_code = 1;
-	debug(D_BATCH, "task %d fail", wt->ID);
-	return 0;	
+	debug(D_BATCH, "task %d complete", wt->ID);
+	info->exited_normally = 1;
+	info->exit_code = wt->ret_code;
+	return (batch_job_id_t)wt->ID;
 }
 
 static int batch_job_k8s_oper_remove (struct batch_queue *q, 
