@@ -141,7 +141,11 @@ char *k8s_oper_task_to_json_string(struct k8s_oper_task *t) {
     jx_insert_strval_hash_table(j, "inputs", t->inputs);
     jx_insert_strval_hash_table(j, "outputs", t->outputs);
     jx_insert_string(j, "execcmd", t->exec_cmd);
-	jx_insert_string(j, "categoryname", t->category_name);
+	if (t->category_name) {
+		jx_insert_string(j, "categoryname", t->category_name);
+	} else {
+		jx_insert_string(j, "categoryname", "");
+	}
 	jx_insert_integer(j, "reqcores", t->req_cores);
 	jx_insert_integer(j, "reqCPU", t->req_CPU);
 	jx_insert_integer(j, "reqmem", t->req_mem);
