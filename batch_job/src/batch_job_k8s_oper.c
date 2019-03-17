@@ -32,7 +32,12 @@ typedef struct k8s_oper_task {
 	struct hash_table *inputs;
 	struct hash_table *outputs;
 	char *exec_cmd;
-	int ret_code
+	char *category_name;	
+	int64_t req_cores;
+	int64_t req_CPU;
+	int64_t req_mem;
+	int64_t req_disk;
+	int ret_code;
 } k8s_oper_task; 
 
 // safe_free checks if a pointer is empty, before
@@ -47,12 +52,20 @@ static void safe_free(void *ptr) {
 struct k8s_oper_task *new_k8s_oper_task(int ID, 
 		struct hash_table *inputs, 
 		struct hash_table *outputs, 
-		char *exec_cmd, int ret_code) {
+		char *exec_cmd, char *category_name,
+		int64_t req_cores, int64_t req_CPU,
+		int64_t req_mem, int64_t req_disk,
+		int ret_code) {
 	struct k8s_oper_task *wt = malloc(sizeof(k8s_oper_task));
 	wt->ID = ID;
 	wt->inputs = inputs;
 	wt->outputs = outputs;
 	wt->exec_cmd = exec_cmd;
+	wt->category_name = category_name,
+	wt->req_cores = req_cores;
+	wt->req_CPU = req_CPU;
+	wt->req_mem = req_mem;
+	wt->req_disk = req_disk;
 	wt->ret_code = ret_code;
 	return wt;
 }
@@ -86,8 +99,15 @@ struct k8s_oper_task *new_k8s_oper_task_from_json(char *json_string) {
     struct jx *output_jx = jx_lookup(j1, "outputs");
     struct hash_table *input_ht = jx_to_strval_hash_table(input_jx);
     struct hash_table *output_ht = jx_to_strval_hash_table(output_jx);
-    struct k8s_oper_task *t = new_k8s_oper_task((int)jx_lookup_integer(j1, "id"),
-            input_ht, output_ht, (char *)jx_lookup_string(j1, "execcmd"),
+    struct k8s_oper_task *t = new_k8s_oper_task(
+			(int)jx_lookup_integer(j1, "id"),
+            input_ht, output_ht, 
+			(char *)jx_lookup_string(j1, "execcmd"),
+			(char *)jx_lookup_string(j1, "categoryname"),
+			(int64_t)jx_lookup_integer(j1, "reqcores"),
+			(int64_t)jx_lookup_integer(j1, "reqCPU"),
+			(int64_t)jx_lookup_integer(j1, "reqmem"),
+			(int64_t)jx_lookup_integer(j1, "reqdisk"),
             (int)jx_lookup_integer(j1, "retcode"));
 	
     return t;
@@ -121,6 +141,12 @@ char *k8s_oper_task_to_json_string(struct k8s_oper_task *t) {
     jx_insert_strval_hash_table(j, "inputs", t->inputs);
     jx_insert_strval_hash_table(j, "outputs", t->outputs);
     jx_insert_string(j, "execcmd", t->exec_cmd);
+	jx_insert_string(j, "categoryname", t->category_name);
+	jx_insert_integer(j, "reqcores", t->req_cores);
+	jx_insert_integer(j, "reqCPU", t->req_CPU);
+	jx_insert_integer(j, "reqmem", t->req_mem);
+	jx_insert_integer(j, "reqdisk", t->req_disk);
+	jx_insert_integer(j, "retcode", t->ret_code);
 
     char *ret =  jx_print_string(j);
     jx_delete(j);
@@ -171,12 +197,15 @@ static struct hash_table *str_to_hash_table(const char *inp_str) {
 }
 
 static char *batch_job_to_json_string(int id, const char *inputs, 
-		const char *outputs, const char *cmd) {
+		const char *outputs, const char *cmd,
+		char *category_name, int64_t cores,
+		int64_t CPU, int64_t memory, int64_t disk) {
 	// batch_job -> k8s_oper_task
 	struct hash_table *inps = str_to_hash_table(inputs);
 	struct hash_table *oups = str_to_hash_table(outputs);
 	struct k8s_oper_task *wt = 
-		new_k8s_oper_task(id, inps, oups, (char *)cmd, 0);
+		new_k8s_oper_task(id, inps, oups, (char *)cmd, 
+				category_name, cores, CPU, memory, disk, 0);
 	// k8s_oper_task -> json_string 
 	char *json_str = k8s_oper_task_to_json_string(wt);
 	delete_k8s_oper_task(wt);
@@ -201,7 +230,10 @@ static batch_job_id_t batch_job_k8s_oper_submit (struct batch_queue * q,
 	}
 	// 3. inform makeflow-k8s operator to execute a new task 
 	char *json_str = batch_job_to_json_string(++id_counter,
-			extra_input_files, extra_output_files, cmd);
+			extra_input_files, extra_output_files, cmd,
+			resources->category, resources->cores,
+			resources->cpu_time, resources->memory,
+			resources->disk);
 	char *sock_msg = string_format("%s\n", json_str);
 	time_t stop_time = time(0) + K8S_OPER_CONN_TIMEOUT;
 	if (link_write(k8s_oper_link, sock_msg, strlen(sock_msg), stop_time) < 0) {
