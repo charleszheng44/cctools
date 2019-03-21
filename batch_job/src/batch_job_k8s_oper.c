@@ -104,10 +104,10 @@ struct k8s_oper_task *new_k8s_oper_task_from_json(char *json_string) {
             input_ht, output_ht, 
 			(char *)jx_lookup_string(j1, "execcmd"),
 			(char *)jx_lookup_string(j1, "categoryname"),
-			(int64_t)jx_lookup_integer(j1, "reqcores"),
-			(int64_t)jx_lookup_integer(j1, "reqCPU"),
-			(int64_t)jx_lookup_integer(j1, "reqmem"),
-			(int64_t)jx_lookup_integer(j1, "reqdisk"),
+			jx_lookup_integer(j1, "reqcores"),
+			jx_lookup_integer(j1, "reqCPU"),
+			jx_lookup_integer(j1, "reqmem"),
+			jx_lookup_integer(j1, "reqdisk"),
             (int)jx_lookup_integer(j1, "retcode"));
 	
     return t;
