@@ -219,7 +219,7 @@ static char *batch_job_to_json_string(int id, const char *inputs,
 static int submit_categories_info(struct batch_queue *q) {
 	// TODO not implement yet
 	const char *cats_info = batch_queue_get_option(q, "category-info");
-	char *sock_msg = string_format("%s\n", cats_info);
+	char *sock_msg = string_format("CAT_INFO %s\n", cats_info);
 	time_t stop_time = time(0) + K8S_OPER_CONN_TIMEOUT;
 	if (link_write(k8s_oper_link, sock_msg, strlen(sock_msg), stop_time) < 0) {
 		safe_free(sock_msg);
@@ -262,7 +262,7 @@ static batch_job_id_t batch_job_k8s_oper_submit (struct batch_queue *q,
 			resources->category, resources->cores,
 			resources->cpu_time, resources->memory,
 			resources->disk);
-	char *sock_msg = string_format("%s\n", json_str);
+	char *sock_msg = string_format("TASK_INFO %s\n", json_str);
 	time_t stop_time = time(0) + K8S_OPER_CONN_TIMEOUT;
 	if (link_write(k8s_oper_link, sock_msg, strlen(sock_msg), stop_time) < 0) {
 		safe_free(sock_msg);
