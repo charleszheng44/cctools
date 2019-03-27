@@ -225,7 +225,7 @@ static int submit_categories_info(struct batch_queue *q) {
 		safe_free(sock_msg);
 		debug(D_BATCH, "fail to send categories information through socket: %s", 
 				strerror(errno));
-		return -1;
+		return 1;
 	}
 	debug(D_BATCH, "successfully send categories information through socket: %s", 
 		strerror(errno));
@@ -250,8 +250,9 @@ static batch_job_id_t batch_job_k8s_oper_submit (struct batch_queue *q,
 		is_connected = 1;
 	}
 	// 3. if categories information hasn't been submitted, submit it first
+	debug(D_BATCH, "------------- %d", categories_info_submitted);
 	if (!categories_info_submitted) {
-		if (!submit_categories_info(q)) {
+		if (submit_categories_info(q)) {
 			return -1;
 		}
 		categories_info_submitted = 1;
