@@ -29,6 +29,7 @@ See the file COPYING for details.
 #include "jx.h"
 #include "jx_match.h"
 #include "jx_parse.h"
+#include "jx_print.h"
 #include "jx_getopt.h"
 #include "create_dir.h"
 #include "sha1.h"
@@ -40,6 +41,7 @@ See the file COPYING for details.
 #include "parser.h"
 #include "parser_jx.h"
 
+#include "makeflow_category_info_aggregator.h"
 #include "makeflow_summary.h"
 #include "makeflow_gc.h"
 #include "makeflow_log.h"
@@ -2281,6 +2283,18 @@ int main(int argc, char *argv[])
 
 	if(batch_queue_type == BATCH_QUEUE_TYPE_K8S) {
 		batch_queue_set_option(remote_queue, "k8s-image", k8s_image);
+	}
+	
+	if(batch_queue_type == BATCH_QUEUE_TYPE_K8S_OPER) {
+		// 1. aggregate nodes belong to same category
+		struct hash_table *categories_info = generate_categories_info_from_dag(d);
+		// 2. generate json string
+		char *categories_info_json_string = 
+			categories_info_to_json_string(categories_info);
+		categories_info_delete(categories_info);
+		// 3. pass category information as Work Queue feature
+		batch_queue_set_option(remote_queue, "category-info", 
+				categories_info_json_string);
 	}
 
 	if(batch_queue_type == BATCH_QUEUE_TYPE_DRYRUN) {
