@@ -51,7 +51,7 @@ static void safe_free(void *ptr) {
 struct k8s_oper_task *new_k8s_oper_task(int ID, 
 		struct hash_table *inputs, 
 		struct hash_table *outputs, 
-		char *exec_cmd, char *category_name,
+		char *exec_cmd, const char *category_name,
 		int64_t req_cores, int64_t req_CPU,
 		int64_t req_mem, int64_t req_disk,
 		int ret_code) {
@@ -102,7 +102,7 @@ struct k8s_oper_task *new_k8s_oper_task_from_json(char *json_string) {
 			(int)jx_lookup_integer(j1, "id"),
             input_ht, output_ht, 
 			(char *)jx_lookup_string(j1, "execcmd"),
-			(char *)jx_lookup_string(j1, "categoryname"),
+			(const char *)jx_lookup_string(j1, "categoryname"),
 			jx_lookup_integer(j1, "reqcores"),
 			jx_lookup_integer(j1, "reqCPU"),
 			jx_lookup_integer(j1, "reqmem"),
@@ -258,7 +258,7 @@ static batch_job_id_t batch_job_k8s_oper_submit (struct batch_queue *q,
 	}
 
 	// get task category
-	const char *task_cat = batch_queue_get_option(q, "task-cat")
+	const char *task_cat = batch_queue_get_option(q, "task-cat");
 	// 4. inform makeflow-k8s operator to execute a new task 
 	char *json_str = batch_job_to_json_string(++id_counter,
 			extra_input_files, extra_output_files, cmd,
