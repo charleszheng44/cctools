@@ -3723,6 +3723,11 @@ static int send_one_task( struct work_queue *q )
 
 		// If there is no suitable worker, consider the next task.
 		if(!w) continue;
+		
+		// TODO for debug purpose, can be deleted
+		if(hash_table_lookup(w->features, t->category)) {
+			debug(D_WQ, "[KUBE-OPER] send task (%d) of category %s to worker with feature %s", t->taskid, t->category, t->category);
+		}
 
 		// Otherwise, remove it from the ready list and start it:
 		commit_task_to_worker(q,w,t);
