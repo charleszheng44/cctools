@@ -202,7 +202,7 @@ static struct hash_table *str_to_hash_table(const char *inp_str) {
 
 static char *batch_job_to_json_string(int id, const char *inputs, 
 		const char *outputs, const char *cmd,
-		char *category_name, int64_t cores,
+		const char *category_name, int64_t cores,
 		int64_t CPU, int64_t memory, int64_t disk) {
 	// batch_job -> k8s_oper_task
 	struct hash_table *inps = str_to_hash_table(inputs);
@@ -256,10 +256,13 @@ static batch_job_id_t batch_job_k8s_oper_submit (struct batch_queue *q,
 		}
 		categories_info_submitted = 1;
 	}
+
+	// get task category
+	const char *task_cat = batch_queue_get_option(q, "task-cat")
 	// 4. inform makeflow-k8s operator to execute a new task 
 	char *json_str = batch_job_to_json_string(++id_counter,
 			extra_input_files, extra_output_files, cmd,
-			resources->category, resources->cores,
+			task_cat, resources->cores,
 			resources->cpu_time, resources->memory,
 			resources->disk);
 	char *sock_msg = string_format("TASK_INFO %s\n", json_str);

@@ -541,6 +541,7 @@ static void makeflow_node_submit(struct dag *d, struct dag_node *n, const struct
 	/* Create task from node information */
 	struct batch_task *task = dag_node_to_batch_task(n, queue, should_send_all_local_environment);
 	batch_queue_set_int_option(queue, "task-id", task->taskid);
+	batch_queue_set_option(queue, "task-cat", n->category->name);
 
 	/* This augments the task struct, should be replaced with node_submit in future. */
 	makeflow_node_expand(n, queue, task);
