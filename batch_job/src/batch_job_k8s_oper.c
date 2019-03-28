@@ -250,7 +250,6 @@ static batch_job_id_t batch_job_k8s_oper_submit (struct batch_queue *q,
 		is_connected = 1;
 	}
 	// 3. if categories information hasn't been submitted, submit it first
-	debug(D_BATCH, "------------- %d", categories_info_submitted);
 	if (!categories_info_submitted) {
 		if (submit_categories_info(q)) {
 			return -1;
@@ -264,6 +263,7 @@ static batch_job_id_t batch_job_k8s_oper_submit (struct batch_queue *q,
 			resources->cpu_time, resources->memory,
 			resources->disk);
 	char *sock_msg = string_format("TASK_INFO %s\n", json_str);
+	debug(D_BATCH, "the sock_msg is: %s", sock_msg);
 	time_t stop_time = time(0) + K8S_OPER_CONN_TIMEOUT;
 	if (link_write(k8s_oper_link, sock_msg, strlen(sock_msg), stop_time) < 0) {
 		safe_free(sock_msg);
