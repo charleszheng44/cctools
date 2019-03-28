@@ -683,7 +683,7 @@ const struct rmsummary *category_dynamic_task_max_resources(struct category *c, 
 	}
 
 	internal = rmsummary_create(-1);
-    internal->cateogry = c->name;
+    internal->category = c->name;
     
 	struct rmsummary *max   = c->max_allocation;
 	struct rmsummary *first = c->first_allocation;
