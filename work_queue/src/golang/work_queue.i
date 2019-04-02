@@ -7,6 +7,8 @@
 	#include "timestamp.h"
 	#include "work_queue.h"
 	#include "rmsummary.h"
+    #include "hash_table.h"
+    #include "work_queue_struct_for_go.h"
 %}
 
 %typemap(in) off_t = int;
@@ -31,5 +33,5 @@
 %include "work_queue.h"
 %include "rmsummary.h"
 %include "category.h"
-
-
+%include "hash_table.h"
+%include "work_queue_struct_for_go.h"

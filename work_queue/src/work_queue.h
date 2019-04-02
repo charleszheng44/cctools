@@ -51,7 +51,8 @@ typedef enum {
 	WORK_QUEUE_SCHEDULE_FILES,     /**< Select worker that has the most data required by the task. */
 	WORK_QUEUE_SCHEDULE_TIME,      /**< Select worker that has the fastest execution time on previous tasks. */
 	WORK_QUEUE_SCHEDULE_RAND,      /**< Select a random worker. (default) */
-	WORK_QUEUE_SCHEDULE_WORST      /**< Select the worst fit worker (the worker with more unused resources). */
+	WORK_QUEUE_SCHEDULE_WORST,     /**< Select the worst fit worker (the worker with more unused resources). */
+    WORK_QUEUE_SCHEDULE_CATS,      /**< Select worker that belongs to same category of the task. (default category is used if no worker available form the task category). */
 } work_queue_schedule_t;
 
 
