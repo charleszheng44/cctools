@@ -147,7 +147,6 @@ struct work_queue {
 
 	struct hash_table *worker_table;
 	struct hash_table *worker_blacklist;
-	struct hash_table *worker_resizelist;
 	struct itable  *worker_task_map;
 
 	struct hash_table *categories;
@@ -3472,52 +3471,6 @@ static struct work_queue_worker *find_worker_by_random(struct work_queue *q, str
 	return w;
 }
 
-static struct work_queue_worker *find_worker_by_category(struct work_queue *q, struct work_queue_task *t)
-{
-	// we match task and worke of same category using feature
-	// e.g.
-	//     task and worker of category "default" will contain
-	//     feature "default"
-	
-	char *key;
-	struct work_queue_worker *w = NULL;
-	int random_worker;
-	struct list *valid_workers = list_create();
-	
-	hash_table_firstkey(q->worker_table);
-	while(hash_table_nextkey(q->worker_table, &key, (void**)&w)) {
-		if(check_hand_against_task(q, w, t)) {
-			list_push_tail(valid_workers, w);
-		}
-	}
-	
-	// remove worker need to be resized from valid_workers
-	key = NULL;
-	w = NULL;
-	if(list_size(valid_workers) > 0) {
-		hash_table_firstkey(valid_workers);
-		while(hash_table_nextkey(valid_workers, &key, (void**)&w)) {
-			if(hash_table_lookup(q->worker_resizelist, key)) {
-				hash_table_remove(valid_workers, key);
-			}
-		}
-	}
-	
-	// select valid worker randomly
-	w = NULL;
-	if(list_size(valid_workers) > 0) {
-		random_worker = (rand() % list_size(valid_workers)) + 1;
-
-		while(random_worker && list_size(valid_workers)) {
-			w = list_pop_head(valid_workers);
-			random_worker--;
-		}
-	}
-
-	list_delete(valid_workers);
-	return w;
-}
-
 // 1 if a < b, 0 if a >= b
 static int compare_worst_fit(struct work_queue_resources *a, struct work_queue_resources *b)
 {
@@ -4889,7 +4842,6 @@ struct work_queue *work_queue_create(int port)
 
 	q->worker_table = hash_table_create(0, 0);
 	q->worker_blacklist = hash_table_create(0, 0);
-	q->worker_resizelist = hash_table_create(0, 0);
 	q->worker_task_map = itable_create(0);
 
 	q->measured_local_resources   = rmsummary_create(-1);
@@ -5177,7 +5129,6 @@ void work_queue_delete(struct work_queue *q)
 
 		hash_table_delete(q->worker_table);
 		hash_table_delete(q->worker_blacklist);
-		hash_table_delete(q->worker_resizelist);
 		itable_delete(q->worker_task_map);
 
 		struct category *c;
@@ -5700,24 +5651,6 @@ static void work_queue_blacklist_clear_by_time(struct work_queue *q, time_t dead
 		work_queue_blacklist_remove(q, hostname);
 	}
 }
-
-void work_queue_resizelist_add(struct work_queue *q, char *worker_hashkey, 
-		char *worker_category) 
-{
-	debug(D_WQ, "Adding worker %s of %s to resize list", worker_hashkey, 
-			worker_category);
-	hash_table_insert(q->worker_resizelist, worker_hashkey, worker_category);
-}
-
-void work_queue_resizelist_remove(struct work_queue *q, char *worker_hashkey,
-		char *worker_category)
-{
-
-	hash_table_remove(q->worker_resizelist, worker_hashkey);
-	debug(D_WQ, "Removing worker %s of %s from resize list", worker_hashkey, 
-			worker_category);
-}
-
 
 void work_queue_blacklist_clear(struct work_queue *q)
 {
