@@ -773,6 +773,8 @@ indicating how many from each worker pool are attached.
 */
 char * work_queue_get_worker_summary( struct work_queue *q );
 
+char* work_queue_get_task_dispatch_rates(struct work_queue *q);
+
 /** Turn on or off fast abort functionality for a given queue for tasks without
 an explicit category. Given the multiplier, abort a task which running time is
 larger than the average times the multiplier.  Fast-abort is computed per task

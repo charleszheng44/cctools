@@ -159,7 +159,6 @@ char *k8s_oper_task_to_json_string(struct k8s_oper_task *t) {
 static int is_k8s_oper_running = 0;
 static int is_connected = 0;
 static int id_counter = 0;
-static int categories_info_submitted = 0;
 struct link *k8s_oper_link = NULL;
 
 // BUF_SIZE is the size of the message transferred between 
@@ -216,22 +215,6 @@ static char *batch_job_to_json_string(int id, const char *inputs,
 	return json_str;
 }
 
-static int submit_categories_info(struct batch_queue *q) {
-	// TODO not implement yet
-	const char *cats_info = batch_queue_get_option(q, "category-info");
-	char *sock_msg = string_format("CAT_INFO %s\n", cats_info);
-	time_t stop_time = time(0) + K8S_OPER_CONN_TIMEOUT;
-	if (link_write(k8s_oper_link, sock_msg, strlen(sock_msg), stop_time) < 0) {
-		safe_free(sock_msg);
-		debug(D_BATCH, "fail to send categories information through socket: %s", 
-				strerror(errno));
-		return 1;
-	}
-	debug(D_BATCH, "successfully send categories information through socket: %s", 
-		strerror(errno));
-	return 0;
-}
-
 static batch_job_id_t batch_job_k8s_oper_submit (struct batch_queue *q, 
 		const char *cmd, const char *extra_input_files, 
 		const char *extra_output_files, struct jx *envlist, 
@@ -248,13 +231,6 @@ static batch_job_id_t batch_job_k8s_oper_submit (struct batch_queue *q,
 			return -1;			
 		};
 		is_connected = 1;
-	}
-	// 3. if categories information hasn't been submitted, submit it first
-	if (!categories_info_submitted) {
-		if (submit_categories_info(q)) {
-			return -1;
-		}
-		categories_info_submitted = 1;
 	}
 
 	// get task category

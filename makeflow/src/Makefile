@@ -37,7 +37,7 @@ makeflow makeflow_viz makeflow_analyze makeflow_status: $(OBJECTS)
 
 makeflow_status: makeflow_status.o
 
-makeflow: makeflow_alloc.o makeflow_summary.o makeflow_gc.o makeflow_log.o makeflow_wrapper.o makeflow_catalog_reporter.o makeflow_local_resources.o $(MAKEFLOW_WRAPPERS) makeflow_hook.o $(MAKEFLOW_HOOKS) $(MAKEFLOW_MODULES) makeflow_category_info_aggregator.o
+makeflow: makeflow_alloc.o makeflow_summary.o makeflow_gc.o makeflow_log.o makeflow_wrapper.o makeflow_catalog_reporter.o makeflow_local_resources.o $(MAKEFLOW_WRAPPERS) makeflow_hook.o $(MAKEFLOW_HOOKS) $(MAKEFLOW_MODULES) 
 
 
 $(PROGRAMS): $(EXTERNAL_DEPENDENCIES)

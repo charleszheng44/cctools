@@ -44,6 +44,7 @@ The following major problems must be fixed:
 #include "path.h"
 #include "md5.h"
 #include "url_encode.h"
+#include "jx.h"
 #include "jx_print.h"
 #include "shell.h"
 #include "pattern.h"
@@ -127,6 +128,13 @@ int wq_option_scheduler = WORK_QUEUE_SCHEDULE_TIME;
 /* default timeout for slow workers to come back to the pool */
 double wq_option_blacklist_slow_workers_timeout = 900;
 
+struct task_dispatch_rate {
+	timestamp_t t;
+	int tasks_dispatched; // num of task dispatched at this moment
+	double rate;          // task dispatch rate at this moment 
+				          // (i.e. tasks_dispatched / (t-start_time))
+};
+
 struct work_queue {
 	char *name;
 	int port;
@@ -157,6 +165,7 @@ struct work_queue {
 	struct work_queue_stats *stats_measure;
 	struct work_queue_stats *stats_disconnected_workers;
 	timestamp_t time_last_wait;
+	struct list *task_dispatch_rates;
 
 	int worker_selection_algorithm;
 	int task_ordering;
@@ -3665,6 +3674,57 @@ static void find_max_worker(struct work_queue *q) {
 	}
 }
 
+static struct jx *jx_marshal_task_dispatch_rate(struct task_dispatch_rate *tdr) {
+	struct jx *j = xxcalloc(1, sizeof(*j));
+	j->type = JX_OBJECT;
+	jx_insert(j, jx_string("microsectimestamp"),  
+			jx_string(string_format("%" PRIu64, tdr->t)));
+	jx_insert(j, jx_string("tasksdispatched"),
+			jx_integer(tdr->tasks_dispatched));
+	jx_insert(j, jx_string("rate"),
+			jx_double(tdr->rate));
+	return j;
+}
+
+char* work_queue_get_task_dispatch_rates(struct work_queue *q)
+{
+	// convert list to jx_array
+	char *json_str = NULL;
+	struct jx *ja = jx_array(0);
+	list_first_item(q->task_dispatch_rates);
+	struct task_dispatch_rate *tdr = NULL;
+	struct jx *rate_jx = NULL;
+	while((tdr = list_next_item(q->task_dispatch_rates)) != NULL) {
+		rate_jx = jx_marshal_task_dispatch_rate(tdr);
+		jx_array_append(ja, rate_jx);
+	}
+	json_str = jx_print_string(ja);
+	jx_delete(ja);
+	return json_str;
+}
+
+static void cal_accumulate_dispatch_rate(struct work_queue *q)
+{
+	struct task_dispatch_rate *tdr = malloc(sizeof(*tdr));
+	tdr->t = timestamp_get();
+	tdr->tasks_dispatched = q->stats->tasks_dispatched;
+	tdr->rate = 1000000 * ((double)(tdr->tasks_dispatched) / 
+			(tdr->t - q->stats->time_when_started));
+	list_push_tail(q->task_dispatch_rates, tdr);
+}
+
+static void cal_unit_dispatch_rate(struct work_queue *q)
+{
+	// TODO not implemented yet
+	return;
+}
+
+static void cal_task_dispatch_rate(struct work_queue *q) 
+{
+	cal_accumulate_dispatch_rate(q);
+	cal_unit_dispatch_rate(q);
+}
+
 static void commit_task_to_worker(struct work_queue *q, struct work_queue_worker *w, struct work_queue_task *t)
 {
 	t->hostname = xxstrdup(w->hostname);
@@ -3681,7 +3741,8 @@ static void commit_task_to_worker(struct work_queue *q, struct work_queue_worker
 
 	t->try_count += 1;
 	q->stats->tasks_dispatched += 1;
-
+	
+	cal_task_dispatch_rate(q);
 	count_worker_resources(q, w);
 
 	if(result != SUCCESS) {
@@ -3729,11 +3790,6 @@ static int send_one_task( struct work_queue *q )
 		// If there is no suitable worker, consider the next task.
 		if(!w) continue;
 		
-		// TODO for debug purpose, can be deleted
-		if(hash_table_lookup(w->features, t->category)) {
-			debug(D_WQ, "[KUBE-OPER] send task (%d) of category %s to worker with feature %s", t->taskid, t->category, t->category);
-		}
-
 		// Otherwise, remove it from the ready list and start it:
 		commit_task_to_worker(q,w,t);
 
@@ -4856,6 +4912,8 @@ struct work_queue *work_queue_create(int port)
 	q->stats_disconnected_workers = calloc(1, sizeof(struct work_queue_stats));
 	q->stats_measure              = calloc(1, sizeof(struct work_queue_stats));
 
+	q->task_dispatch_rates = list_create();
+
 	q->workers_with_available_results = hash_table_create(0, 0);
 
 	// The poll table is initially null, and will be created
@@ -5153,6 +5211,9 @@ void work_queue_delete(struct work_queue *q)
 
 		list_free(q->task_reports);
 		list_delete(q->task_reports);
+
+		list_free(q->task_dispatch_rates);
+		list_delete(q->task_dispatch_rates);
 
 		free(q->stats);
 		free(q->stats_disconnected_workers);
