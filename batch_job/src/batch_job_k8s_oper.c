@@ -60,7 +60,7 @@ struct k8s_oper_task *new_k8s_oper_task(int ID,
 	wt->inputs = inputs;
 	wt->outputs = outputs;
 	wt->exec_cmd = exec_cmd;
-	wt->category_name = category_name,
+	wt->category_name = (char *)category_name,
 	wt->req_cores = req_cores;
 	wt->req_CPU = req_CPU;
 	wt->req_mem = req_mem;
@@ -288,9 +288,15 @@ static int batch_queue_k8s_oper_create (struct batch_queue *q) {
 }
 
 static int batch_queue_k8s_oper_free (struct batch_queue *q) {
-	// TODO NOT IMPLEMENT
-	// close socket
-	// stop makeflow-k8s operator 
+	char *sock_msg = string_format("WF_COMPLT %ld\n", time(0));
+	debug(D_BATCH, "the sock_msg is: %s", sock_msg);
+	time_t stop_time = time(0) + K8S_OPER_CONN_TIMEOUT;
+	if (link_write(k8s_oper_link, sock_msg, strlen(sock_msg), stop_time) < 0) {
+		safe_free(sock_msg);
+		debug(D_BATCH, "fail to send workflow complete signal through socket: %s", 
+				strerror(errno));
+		return -1;
+	}
 	return 0;
 }
 
